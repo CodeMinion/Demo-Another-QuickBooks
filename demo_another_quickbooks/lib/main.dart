@@ -47,6 +47,7 @@ class _MyHomePageState extends State<MyHomePage> {
   final String applicationId = "b790c7c7-28bb-4614-898d-d4587";
   final String clientId = "ABNIuyQM0oAR68j9E4qFlXa1wECY4TDah7H7w3urknpWDlgYKA";
   final String clientSecret = "iZU1Dyqh2TNz0Rp01z83SJ4n6XggN2nTGZNHU3AC";
+
   final String refreshToken =
       "AB11652296788mUqtDdp2TUwNA5qS7VNGMoYqvw9vbNTxDZIel"; //"AB11652210098Wbv587q2tebOcKFcsPRplbRtoqobsvEmI2vVr";
   String? realmId;// = "4620816365213534410";
@@ -76,10 +77,12 @@ class _MyHomePageState extends State<MyHomePage> {
 
     await quickClient!.initialize();
     setState(() {
+
       authUrl = quickClient!.getAuthorizationPageUrl(
           scopes: [Scope.Payments, Scope.Accounting],
           redirectUrl: redirectUrl,
           state: "state123");
+
     });
   }
 
@@ -168,6 +171,94 @@ class _MyHomePageState extends State<MyHomePage> {
 
     // Print Invoice
     printer.printPdfFile(invoiceFile.path, 1);
+
+  }
+
+  void printQuickbooksReportBle() async {
+
+    //////////////////////////////////////////////////
+    /// Request the Storage permissions required by
+    /// another_brother to print.
+    //////////////////////////////////////////////////
+    if (!await Permission.storage.request().isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Padding(
+          padding: EdgeInsets.all(8.0),
+          child: Text("Access to storage is needed in order print."),
+        ),
+      ));
+      return;
+    }
+
+    //////////////////////////////////////////////////
+    /// Fetch invoice PDF for Invoice ID: 130
+    //////////////////////////////////////////////////
+    Uint8List pdfBytes = await quickClient!
+        .getAccountingClient()
+        .getInvoicePdf(realmId: realmId, invoiceId: "130");
+
+    //////////////////////////////////////////////////
+    /// Save PDF to temp memory
+    /// The library another_brother requires a PDF
+    /// file so we need to save the bytes of the PDF
+    /// file obtained through another_quickbooks
+    //////////////////////////////////////////////////
+    final directory = await getApplicationDocumentsDirectory();
+    final path = directory.path;
+    File invoiceFile = File('$path/invoice.pdf');
+    invoiceFile.writeAsBytesSync(pdfBytes);
+
+    //////////////////////////////////////////////////
+    /// Configure printer
+    /// Printer: QL1110NWB
+    /// Connection: Bluetooth
+    /// Paper Size: W62
+    /// Important: Printer must be paired to the
+    /// phone for the BT search to find it.
+    //////////////////////////////////////////////////
+    var printer = new Printer();
+    var printInfo = PrinterInfo();
+    printInfo.printerModel = Model.RJ_4250WB;
+    printInfo.printMode = PrintMode.FIT_TO_PAGE;
+    printInfo.isAutoCut = true;
+    printInfo.port = Port.BLE;
+    // Set the label type.
+    double width = 102.0;
+    double rightMargin = 0.0;
+    double leftMargin = 0.0;
+    double topMargin = 0.0;
+    CustomPaperInfo customPaperInfo = CustomPaperInfo.newCustomRollPaper(printInfo.printerModel,
+        Unit.Mm,
+        width,
+        rightMargin,
+        leftMargin,
+        topMargin);
+    printInfo.customPaperInfo = customPaperInfo;
+
+    // Set the printer info so we can use the SDK to get the printers.
+    await printer.setPrinterInfo(printInfo);
+
+    // Get a list of printers with my model available in the network.
+    List<BLEPrinter> printers = await printer.getBLEPrinters(3000);
+
+    if (printers.isEmpty) {
+      // Show a message if no printers are found.
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Padding(
+          padding: EdgeInsets.all(8.0),
+          child: Text("No paired printers found on your device."),
+        ),
+      ));
+
+      return;
+    }
+    // Get the BT name from the first printer found.
+    printInfo.setLocalName(printers.single.localName);
+    printer.setPrinterInfo(printInfo);
+
+    // Print Invoice
+    printer.printPdfFile(invoiceFile.path, 1);
+
   }
 
 
@@ -215,7 +306,10 @@ class _MyHomePageState extends State<MyHomePage> {
             ): Container(child: Text("Authenticated with Quickbooks"),)
       ),
       floatingActionButton: token != null ? FloatingActionButton(
-        onPressed: (){printQuickbooksReport();},
+        onPressed: (){
+          printQuickbooksReport();
+          //printQuickbooksReportBle();
+          },
         tooltip: 'Print',
         child: const Icon(Icons.print),
       ): null, // This trailing comma makes auto-formatting nicer for build methods.
